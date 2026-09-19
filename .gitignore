@@ -1,0 +1,63 @@
+# Build
+build/
+build-*/
+cmake-build-*/
+*.o
+*.obj
+*.so
+*.a
+compile_commands.json
+CMakeUserPresets.json
+.cache/
+
+# CUDA / profiling artifacts
+*.nsys-rep
+*.ncu-rep
+*.qdrep
+*.sqlite
+
+# Python tooling
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Weight artifacts (large; produced by offline tooling)
+*.qus
+*.bin
+*.safetensors
+*.gguf
+out/
+*.log
+
+# Measurement raw corpora & intermediates (large; produced by offline tooling).
+tools/freq_corpus/fixtures/*
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+profiles/
+.chatgpt/
+
+# Claude Code personal/local settings (may contain API tokens)
+.claude/settings.local.json
+
+models/
+*.ninfer
+
+# Public release hygiene
+.ai/
+.codex/
+.claude/
+agent-context/
+logs/
+*.tar
+*.tar.gz
+*.zip
+*.jsonl
+*.power.txt
+*.vram.csv
+eval/results/
