@@ -61,3 +61,9 @@ logs/
 *.power.txt
 *.vram.csv
 eval/results/
+
+# M5.4 calibration data (JSONL raw samples / derived summaries). The default location
+# (/media/storage/ninfer-lab/calibration/{raw,summaries}, see src/targets/calibration.h
+# kDefaultCalibrationRawDir/kDefaultCalibrationSummariesDir) is outside this tree entirely; this
+# entry only guards an accidental relative-path override from landing a committed corpus here.
+/calibration/

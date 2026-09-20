@@ -6,6 +6,37 @@ add_executable(ninfer_public_api_test test_public_api.cpp)
 target_include_directories(ninfer_public_api_test PRIVATE ${PROJECT_SOURCE_DIR}/include)
 add_test(NAME ninfer_public_api_test COMMAND ninfer_public_api_test)
 
+# M5.4a: host-only, CUDA-free calibration data contract test. Compiles targets/calibration.cpp
+# directly rather than linking ninfer_engine so this target never pulls in the CUDA archive
+# (ninfer_core/ninfer_ops/ninfer_text) -- calibration.h/.cpp take no CUDA dependency by design.
+add_executable(ninfer_calibration_test
+  test_calibration.cpp
+  ${PROJECT_SOURCE_DIR}/src/targets/calibration.cpp)
+target_include_directories(ninfer_calibration_test PRIVATE
+  ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include)
+add_test(NAME ninfer_calibration_test COMMAND ninfer_calibration_test)
+
+# M5.4b: host-only, CUDA-free calibration collection infrastructure test (source/build/artifact
+# identity, JSONL writer/reader, staleness classifier, summary engine, payload geometry, record
+# emitter). Compiles the new host-only calibration_* sources directly, same pattern as
+# ninfer_calibration_test above, so this target never pulls in the CUDA archive either.
+add_executable(ninfer_calibration_collect_test
+  test_calibration_collect.cpp
+  ${PROJECT_SOURCE_DIR}/src/targets/calibration.cpp
+  ${PROJECT_SOURCE_DIR}/src/targets/calibration_collect.cpp
+  ${PROJECT_SOURCE_DIR}/src/targets/calibration_io.cpp
+  ${PROJECT_SOURCE_DIR}/src/targets/calibration_summary.cpp
+  ${PROJECT_SOURCE_DIR}/src/targets/calibration_measurement.cpp
+  ${PROJECT_SOURCE_DIR}/src/targets/qwen3_6/impl/frontend/digest.cpp)
+target_include_directories(ninfer_calibration_collect_test PRIVATE
+  ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_BINARY_DIR}/generated
+  ${PROJECT_SOURCE_DIR}/src/targets/qwen3_6/export
+  ${PROJECT_SOURCE_DIR}/src/targets/qwen3_6_27b/export)
+add_test(NAME ninfer_calibration_collect_test COMMAND ninfer_calibration_collect_test)
+
 function(ninfer_add_test name)
   cmake_parse_arguments(arg "NEEDS_SOURCE_DIR" "" "SOURCES;LIBRARIES" ${ARGN})
   add_executable(${name} ${arg_SOURCES})
@@ -312,6 +343,13 @@ target_include_directories(ninfer_cli_options_test PRIVATE ${PROJECT_SOURCE_DIR}
 ninfer_add_test(ninfer_request_log_test
   SOURCES test_request_log.cpp
   LIBRARIES ninfer_serve)
+# Host-only: no CUDA, no artifact, no device. Exercises only apps/calibration_probe's argument
+# parser (options.cpp compiled in directly, same pattern as the CLI options tests above --
+# apps/calibration_probe is an executable, not a library).
+ninfer_add_test(ninfer_calibration_probe_options_test
+  SOURCES test_calibration_probe_options.cpp ${PROJECT_SOURCE_DIR}/apps/calibration_probe/options.cpp)
+target_include_directories(ninfer_calibration_probe_options_test PRIVATE
+  ${PROJECT_SOURCE_DIR}/apps/calibration_probe)
 ninfer_add_test(ninfer_http_error_handler_test
   SOURCES test_http_error_handler.cpp
   LIBRARIES ninfer_serve)

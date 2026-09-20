@@ -84,36 +84,75 @@ void process_block(std::array<std::uint32_t, 8>& state, const std::uint8_t* bloc
 
 } // namespace
 
+Sha256Context::Sha256Context()
+    : state_{0x6a09e667U, 0xbb67ae85U, 0x3c6ef372U, 0xa54ff53aU,
+             0x510e527fU, 0x9b05688cU, 0x1f83d9abU, 0x5be0cd19U} {}
+
+void Sha256Context::update(std::span<const std::uint8_t> data) {
+    if (data.size() > std::numeric_limits<std::uint64_t>::max() / 8ULL - total_bytes_) {
+        throw std::invalid_argument("payload is too large to fingerprint");
+    }
+    total_bytes_ += data.size();
+
+    std::size_t offset = 0;
+    if (buffer_used_ != 0) {
+        const std::size_t take = std::min(data.size(), std::size_t{64} - buffer_used_);
+        std::copy_n(data.data(), take, buffer_.data() + buffer_used_);
+        buffer_used_ += take;
+        offset += take;
+        if (buffer_used_ == 64) {
+            process_block(state_, buffer_.data());
+            buffer_used_ = 0;
+        }
+    }
+    while (data.size() - offset >= 64) {
+        process_block(state_, data.data() + offset);
+        offset += 64;
+    }
+    const std::size_t remaining = data.size() - offset;
+    if (remaining != 0) {
+        std::copy_n(data.data() + offset, remaining, buffer_.data() + buffer_used_);
+        buffer_used_ += remaining;
+    }
+}
+
+Sha256Digest Sha256Context::finish() {
+    std::array<std::uint8_t, 128> tail{};
+    std::copy_n(buffer_.data(), buffer_used_, tail.data());
+    tail[buffer_used_]          = 0x80U;
+    const std::size_t tail_size = buffer_used_ < 56 ? 64 : 128;
+    const std::uint64_t bits    = total_bytes_ * 8ULL;
+    for (std::size_t i = 0; i < 8; ++i) {
+        tail[tail_size - 1 - i] = static_cast<std::uint8_t>(bits >> (8U * i));
+    }
+    process_block(state_, tail.data());
+    if (tail_size == 128) { process_block(state_, tail.data() + 64); }
+
+    Sha256Digest digest{};
+    for (std::size_t i = 0; i < state_.size(); ++i) { store_be32(state_[i], digest.data() + 4 * i); }
+    return digest;
+}
+
 Sha256Digest sha256(std::span<const std::uint8_t> input) { return sha256(input, {}); }
 
 Sha256Digest sha256(std::span<const std::uint8_t> input, const std::function<void()>& checkpoint) {
     if (input.size() > std::numeric_limits<std::uint64_t>::max() / 8ULL) {
         throw std::invalid_argument("payload is too large to fingerprint");
     }
-    std::array<std::uint32_t, 8> state{0x6a09e667U, 0xbb67ae85U, 0x3c6ef372U, 0xa54ff53aU,
-                                       0x510e527fU, 0x9b05688cU, 0x1f83d9abU, 0x5be0cd19U};
+    // Checkpoint cadence is preserved exactly as before: it fires on THIS call's local byte offset
+    // within the contiguous input span, at offset 0 and then every 1 MiB, same as the pre-refactor
+    // loop. This logic stays here (not inside Sha256Context::update()) precisely so it does not
+    // entangle with the context's own running total-byte counter, which would change the cadence
+    // for any caller that feeds update() in chunks.
+    Sha256Context ctx;
     std::size_t offset = 0;
     while (input.size() - offset >= 64) {
         if (checkpoint && offset % (1ULL << 20) == 0) { checkpoint(); }
-        process_block(state, input.data() + offset);
+        ctx.update(input.subspan(offset, 64));
         offset += 64;
     }
-
-    std::array<std::uint8_t, 128> tail{};
-    const std::size_t remaining = input.size() - offset;
-    std::copy_n(input.data() + offset, remaining, tail.data());
-    tail[remaining]             = 0x80U;
-    const std::size_t tail_size = remaining < 56 ? 64 : 128;
-    const std::uint64_t bits    = static_cast<std::uint64_t>(input.size()) * 8ULL;
-    for (std::size_t i = 0; i < 8; ++i) {
-        tail[tail_size - 1 - i] = static_cast<std::uint8_t>(bits >> (8U * i));
-    }
-    process_block(state, tail.data());
-    if (tail_size == 128) { process_block(state, tail.data() + 64); }
-
-    Sha256Digest digest{};
-    for (std::size_t i = 0; i < state.size(); ++i) { store_be32(state[i], digest.data() + 4 * i); }
-    return digest;
+    ctx.update(input.subspan(offset));
+    return ctx.finish();
 }
 
 Sha256Digest sha256(std::string_view input) {

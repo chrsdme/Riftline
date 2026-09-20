@@ -17,3 +17,14 @@ target_include_directories(ninfer-serve PRIVATE
   ${PROJECT_SOURCE_DIR}/third_party
   ${PROJECT_SOURCE_DIR}/third_party/cpp-httplib)
 target_link_libraries(ninfer-serve PRIVATE ninfer_serve ninfer_product_load_progress)
+
+# Minimal live identity probe (M5.4c1): identity mode only, reuses the M5.4b collectors, no
+# timing benchmark, no writes.
+add_executable(ninfer_calibration_probe
+  calibration_probe/main.cpp
+  calibration_probe/options.cpp)
+target_include_directories(ninfer_calibration_probe PRIVATE
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/third_party)
+target_link_libraries(ninfer_calibration_probe PRIVATE ninfer_engine CUDA::cudart)

@@ -18,9 +18,67 @@ project(ninfer LANGUAGES C CXX CUDA)
 # PUBLIC for its own consumers, but that link is PRIVATE through ninfer_engine, so apps and tests
 # would not otherwise see it. Defining it globally keeps a single consistent answer for every
 # target, including apps/ninfer-perplexity, whose upstream default KV profile is FP8.
+set(NINFER_SM8X_COMPAT_VALUE 0)
 if(CMAKE_CUDA_ARCHITECTURES MATCHES "(^|;)(86|89)(-real|-virtual)?(;|$)")
   add_compile_definitions(NINFER_SM8X_COMPAT=1)
+  set(NINFER_SM8X_COMPAT_VALUE 1)
 endif()
+
+# Build-type default MUST be resolved before the M5.4b fingerprint block below: the fingerprint
+# records CMAKE_BUILD_TYPE, so a fresh single-config build without an explicit
+# -DCMAKE_BUILD_TYPE would otherwise generate a header with an empty build_type and then compile
+# as Release anyway -- silently mismatching the identity it just fingerprinted.
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# M5.4b build identity: byte-stable fingerprint of kernel-affecting build inputs (see
+# src/targets/calibration_build_id.h.in for the exact input list and rationale). Sorted so list
+# order alone never perturbs the fingerprint.
+set(NINFER_SORTED_CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
+list(SORT NINFER_SORTED_CUDA_ARCHITECTURES)
+list(JOIN NINFER_SORTED_CUDA_ARCHITECTURES "," NINFER_SORTED_CUDA_ARCHITECTURES)
+
+# CMAKE_CXX_FLAGS_<CONFIG>/CMAKE_CUDA_FLAGS_<CONFIG> are per-config variables that
+# configure_file(@ONLY) cannot expand (it does not evaluate nested ${...} references inside a
+# substituted value) -- resolve the active config's variable names into flat variables first.
+string(TOUPPER "${CMAKE_BUILD_TYPE}" NINFER_BUILD_TYPE_UPPER)
+set(NINFER_ACTIVE_CXX_FLAGS_CONFIG "${CMAKE_CXX_FLAGS_${NINFER_BUILD_TYPE_UPPER}}")
+set(NINFER_ACTIVE_CUDA_FLAGS_CONFIG "${CMAKE_CUDA_FLAGS_${NINFER_BUILD_TYPE_UPPER}}")
+
+# Escape backslashes THEN double-quotes (order matters: escaping quotes first would re-escape the
+# backslashes just inserted) so every flag value substitutes into calibration_build_id.h.in as a
+# valid C++ string literal even if it itself contains a `"` or `\`.
+function(ninfer_escape_for_cxx_string_literal input_var)
+  set(_value "${${input_var}}")
+  string(REPLACE "\\" "\\\\" _value "${_value}")
+  string(REPLACE "\"" "\\\"" _value "${_value}")
+  set(${input_var} "${_value}" PARENT_SCOPE)
+endfunction()
+
+ninfer_escape_for_cxx_string_literal(CMAKE_CXX_FLAGS)
+ninfer_escape_for_cxx_string_literal(NINFER_ACTIVE_CXX_FLAGS_CONFIG)
+ninfer_escape_for_cxx_string_literal(CMAKE_CUDA_FLAGS)
+ninfer_escape_for_cxx_string_literal(NINFER_ACTIVE_CUDA_FLAGS_CONFIG)
+
+# Deterministic audit representation of the effective extra compile flags (empty only when
+# genuinely no extra flags are set for this build) -- populates BuildIdentity::compile_flags.
+set(NINFER_COMPILE_FLAGS_AUDIT "")
+foreach(_flag_pair
+    "cxx_flags=${CMAKE_CXX_FLAGS}"
+    "cxx_flags_config=${NINFER_ACTIVE_CXX_FLAGS_CONFIG}"
+    "cuda_flags=${CMAKE_CUDA_FLAGS}"
+    "cuda_flags_config=${NINFER_ACTIVE_CUDA_FLAGS_CONFIG}")
+  if(NOT _flag_pair MATCHES "=$")
+    list(APPEND NINFER_COMPILE_FLAGS_AUDIT "${_flag_pair}")
+  endif()
+endforeach()
+list(JOIN NINFER_COMPILE_FLAGS_AUDIT ";" NINFER_COMPILE_FLAGS_AUDIT)
+
+configure_file(
+  ${PROJECT_SOURCE_DIR}/src/targets/calibration_build_id.h.in
+  ${PROJECT_BINARY_DIR}/generated/targets/calibration_build_id.h
+  @ONLY)
 
 # --- Global settings ---------------------------------------------------------
 option(NINFER_BUILD_APPS "Build the NInfer CLI and server" ON)
@@ -46,9 +104,6 @@ if(MSVC)
   # CUDA's static runtime requests LIBCMT even when the application and vcpkg dependencies use
   # the project-wide /MD runtime. Keep one CRT in the final process.
   add_link_options(/NODEFAULTLIB:LIBCMT)
-endif()
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Release)
 endif()
 
 if(CMAKE_GENERATOR MATCHES "Ninja")

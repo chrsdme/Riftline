@@ -3,7 +3,8 @@ function(ninfer_internal_includes target)
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/third_party
-    ${PROJECT_SOURCE_DIR}/third_party/utf8proc)
+    ${PROJECT_SOURCE_DIR}/third_party/utf8proc
+    ${PROJECT_BINARY_DIR}/generated)
 endfunction()
 
 function(ninfer_cuda_archive target)
@@ -323,6 +324,12 @@ add_library(ninfer_engine STATIC
   targets/device_admission.cpp
   targets/placement.cpp
   targets/placement_planner.cpp
+  targets/calibration.cpp
+  targets/calibration_collect.cpp
+  targets/calibration_collect_cuda.cu
+  targets/calibration_io.cpp
+  targets/calibration_summary.cpp
+  targets/calibration_measurement.cpp
   runtime/contract/sampling.cpp
   runtime/engine/engine.cpp)
 ninfer_internal_includes(ninfer_engine)
